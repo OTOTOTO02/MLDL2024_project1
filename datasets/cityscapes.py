@@ -5,8 +5,11 @@ from torchvision.transforms import ToTensor
 import cv2
 from PIL import Image
 
+# TODO: chack support for test split is gt is not available
+# TODO: check coherence with dataset on Google Drive (works with official dataset not the reduced one from profs)
+
 class CityScapes(Dataset):
-    def __init__(self, rootdir=".", targetdir="gtFine", imgdir="leftImg8bit", split="train", transform=ToTensor(), target_transform=None, instanceSegmentation=False, visualization=False):
+    def __init__(self, rootdir=".", targetdir="gtFine", imgdir="leftImg8bit", split="train", transform=ToTensor(), target_transform=None):
         super(CityScapes, self).__init__()
         
         self.rootdir = rootdir
@@ -17,41 +20,41 @@ class CityScapes(Dataset):
         self.target_transform = target_transform
 
         self.imgs_path = []
-        self.targets_path = []
-
-        self.istanceSegmentation=instanceSegmentation
-        self.visualization=visualization
-
-        if self.istanceSegmentation:
-            self.target_name = "instanceIds"
-        elif self.visualization:
-            self.target_name = "color"
-        else:
-            self.target_name = "labelIds"
+        self.targets_color_path = []
+        self.targets_instanceIds_path = []
+        self.targets_labelIds_path = []
 
         for city in os.listdir(self.imgdir): # frankfurt
-            img_city_dir = os.path.join(self.imgdir, city) # ./gtFine/train/frankfurt/
-            target_city_dir = os.path.join(self.targetdir, city) # ./leftImg8bit/train/frankfurt/
+            img_city_dir = os.path.join(self.imgdir, city) # ./leftImg8bit/train/frankfurt/ 
+            target_city_dir = os.path.join(self.targetdir, city) # ./gtFine/train/frankfurt/
 
             for img_path in os.listdir(img_city_dir): # frankfurt_000000_000294_leftImg8bit.png
                 if img_path.endswith(".png"):
                   self.imgs_path.append(os.path.join(img_city_dir, img_path)) # ./leftImg8bit/train/frankfurt/frankfurt_000000_000294_leftImg8bit.png
-                  target_path = img_path.replace("leftImg8bit", "gtFine_"+ self.target_name) # frankfurt_000000_000294_gtFine_color.png
-                  self.targets_path.append(os.path.join(target_city_dir, target_path)) # ./gtFine/train/frankfurt/frankfurt_000000_000294_gtFine_color.png
+                  
+                  target_color_path = img_path.replace("leftImg8bit", "gtFine_color") # frankfurt_000000_000294_gtFine_color.png
+                  target_instanceIds_path = img_path.replace("leftImg8bit", "gtFine_instanceIds") # frankfurt_000000_000294_gtFine_instanceIds.png
+                  target_labelIds_path = img_path.replace("leftImg8bit", "gtFine_labelIds") # frankfurt_000000_000294_gtFine_labelIds.png
+                  
+                  self.targets_color_path.append(os.path.join(target_city_dir, target_color_path)) # ./gtFine/train/frankfurt/frankfurt_000000_000294_gtFine_color.png
+                  self.targets_instanceIds_path.append(os.path.join(target_city_dir, target_instanceIds_path)) # ./gtFine/train/frankfurt/frankfurt_000000_000294_gtFine_instanceIds.png
+                  self.targets_labelIds_path.append(os.path.join(target_city_dir, target_labelIds_path)) # ./gtFine/train/frankfurt/frankfurt_000000_000294_gtFine_labelIds.png
 
     def __getitem__(self, idx):
         image = Image.open(self.imgs_path[idx]).convert('RGB')
-        if self.visualization:
-            target = Image.open(self.targets_path[idx]).convert('RGB')
-        else:
-            target = cv2.imread(self.targets_path[idx], cv2.IMREAD_UNCHANGED)
+
+        target_color = Image.open(self.targets_color_path[idx]).convert('RGB')
+        target_instanceIds = cv2.imread(self.targets_instanceIds_path[idx], cv2.IMREAD_UNCHANGED)
+        target_labelIds = cv2.imread(self.targets_labelIds_path[idx], cv2.IMREAD_UNCHANGED)
 
         if self.transform is not None:
             image = self.transform(image)
+            target_color = self.transform(target_color)
         if self.target_transform is not None:
-            target = self.target_transform(target)
+            target_instanceIds = self.target_transform(target_instanceIds)
+            target_labelIds = self.target_transform(target_labelIds)
 
-        return image, target
+        return image, target_color, target_labelIds, target_instanceIds
         
     def __len__(self):
         return len(self.imgs_path)
