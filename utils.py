@@ -34,7 +34,30 @@ def per_class_iou(hist):
     return (np.diag(hist)) / (hist.sum(1) + hist.sum(0) - np.diag(hist) + epsilon)
 
 
-def tensorToImage(tensor): 
+# Define the Cityscapes colormap (labelId → RGB)
+# TODO: decide how to color void, since from class 19 they fall under void, but color is different
+CITYSCAPES_COLORS = np.array([
+    [128, 64,128], [244, 35,232], [ 70, 70, 70], [102,102,156], [190,153,153],
+    [153,153,153], [250,170, 30], [220,220,  0], [107,142, 35], [152,251,152],
+    [ 70,130,180], [220, 20, 60], [255,  0,  0], [  0,  0,142], [  0,  0, 70],
+    [  0, 60,100], [  0, 80,100], [  0,  0,230], [119, 11, 32], [0,0,0]# FIXME: [ 56, 76, 70]
+], dtype=np.uint8)
+
+def decode_segmap(mask):
+    """
+    Utility function used to tranform a mask of labels to a RGB image
+    that follow the conventions of label coloring
+    """
+    h, w = mask.shape
+    color_mask = np.zeros((h, w, 3), dtype=np.uint8)
+    for label_id in np.unique(mask):
+        if label_id == 255:
+            color_mask[mask == label_id] = CITYSCAPES_COLORS[-1]
+        else:
+            color_mask[mask == label_id] = CITYSCAPES_COLORS[label_id]
+    return color_mask
+
+def tensorToImageCompatible(tensor): 
     """
     convert from a tensor of shape [C, H, W] where a normalization has been applied
     to an unnormalized tensor of shape [H, W, C],
