@@ -8,22 +8,30 @@ import wandb
 from utils import per_class_iou, fast_hist
 
 # TODO: maybe last class (void) converted to n_classes-1 due to argmax
-# TODO: do i only upload avg of last N batches or all, since different B produce different num_batch
-def train(epoch:int, model:nn.Module, train_loader:DataLoader, criterion:nn.Module, optimizer:optim.Optimizer) -> tuple[float, float, np.ndarray]:
+# TODO: waiting confirmation for logging 1 batch every X
+def train(model:nn.Module, train_loader:DataLoader, criterion:nn.Module, optimizer:optim.Optimizer) -> tuple[float, float, np.ndarray]:
     global device
     global n_classes
     global ENABLE_PRINT
     global ENABLE_WANDB_LOG
     global train_step
+    global log_per_epoch
 
     model.train()
+
+    num_batch = len(train_loader)
+    chunk_batch = num_batch//log_per_epoch+1
+
+    num_sample = len(train_loader.dataset)
+    seen_sample = 0
+
     train_loss = 0.0
     train_hist = np.zeros((n_classes,n_classes))
 
-    num_batch = len(train_loader)
-    num_sample = len(train_loader.dataset)
-
     for batch_idx, (inputs, _, targets) in enumerate(train_loader):
+        batch_size = inputs.size(0)
+        seen_sample += batch_size
+
         inputs, targets = inputs.to(device), targets.squeeze().to(device)
 
         outputs, cx1_sup, cx2_sup = model(inputs)
@@ -38,30 +46,30 @@ def train(epoch:int, model:nn.Module, train_loader:DataLoader, criterion:nn.Modu
 
         hist_batch = np.zeros((n_classes, n_classes))
         for i in range(len(inputs)):
-            hist_batch += fast_hist(targets[i].cpu().numpy(), predicted[i].cpu().numpy(), n_classes)
+            hist_batch += fast_hist(targets[i].detach().cpu().numpy(), predicted[i].detach().cpu().numpy(), n_classes)
 
-        train_loss += loss.item()
+        train_loss += loss.item() * batch_size
         train_hist += hist_batch
-        iou_batch = per_class_iou(hist_batch)
 
-        if ENABLE_PRINT:
-            if (batch_idx % (num_batch//10+1)) == 0:
-                print(f'Train Epoch: {epoch} [{batch_idx * len(inputs)}/{num_sample} ({100. * batch_idx*len(inputs) / num_sample:.0f}%)]')
-                print(f'\tLoss: {loss.item():.6f}')
-                print(f"\tmIoU: {100.*iou_batch[iou_batch > 0].mean():.4f}")
+        # TODO: maybe batch_idx+1? same for validate
+        if ((batch_idx+1) % chunk_batch) == 0:
+            iou_batch = per_class_iou(hist_batch)
+            if ENABLE_PRINT:
+                    print(f'Training [{seen_sample}/{num_sample} ({100. * seen_sample / num_sample:.0f}%)]')
+                    print(f'\tLoss: {loss.item():.6f}')
+                    print(f"\tmIoU: {100.*iou_batch[iou_batch > 0].mean():.4f}")
 
-        if ENABLE_WANDB_LOG:
-            wandb.log({
-                    "train/step": train_step,
-                    "train/batch_loss": loss.item(),
-                    "train/batch_mIou": 100.*iou_batch[iou_batch > 0].mean()
-                },
-                commit=True,
-            )
+            if ENABLE_WANDB_LOG:
+                wandb.log({
+                        "train/step": train_step,
+                        "train/batch_loss": loss.item(),
+                        "train/batch_mIou": 100.*iou_batch[iou_batch > 0].mean()
+                    },
+                    commit=True,
+                )
+                train_step += 1
 
-        train_step += 1
-
-    train_loss = train_loss / num_batch
+    train_loss = train_loss / seen_sample
 
     train_iou_class = per_class_iou(train_hist)
     train_mIou = train_iou_class[train_iou_class > 0].mean()
@@ -69,22 +77,33 @@ def train(epoch:int, model:nn.Module, train_loader:DataLoader, criterion:nn.Modu
     return train_loss, train_mIou, train_hist
 
 
-def validate(epoch:int, model:nn.Module, val_loader:DataLoader, criterion:nn.Module) -> tuple[float, float, np.ndarray]:
+def validate(model:nn.Module, val_loader:DataLoader, criterion:nn.Module) -> tuple[float, float, np.ndarray]:
     global device
     global n_classes
     global ENABLE_PRINT
     global ENABLE_WANDB_LOG
     global val_step
+    global log_per_epoch
 
     model.eval()
+
+    num_batch = len(val_loader)
+    chunk_batch = num_batch//log_per_epoch+1
+
+    num_sample = len(val_loader.dataset)
+    seen_sample = 0
+    chunk_sample = 0
+
     val_loss = 0.0
     val_hist = np.zeros((n_classes,n_classes))
 
-    num_batch = len(val_loader)
-    num_sample = len(val_loader.dataset)
+    chunk_loss = 0.0
+    chunk_hist = np.zeros((n_classes,n_classes))
 
     with torch.no_grad():
         for batch_idx, (inputs, _, targets) in enumerate(val_loader):
+            batch_size = inputs.size(0)
+
             inputs, targets = inputs.to(device), targets.squeeze().to(device)
 
             outputs = model(inputs)
@@ -94,30 +113,63 @@ def validate(epoch:int, model:nn.Module, val_loader:DataLoader, criterion:nn.Mod
 
             hist_batch = np.zeros((n_classes, n_classes))
             for i in range(len(inputs)):
-                hist_batch += fast_hist(targets[i].cpu().numpy(), predicted[i].cpu().numpy(), n_classes)
+                hist_batch += fast_hist(targets[i].detach().cpu().numpy(), predicted[i].detach().cpu().numpy(), n_classes)
 
-            val_loss += loss.item()
-            val_hist += hist_batch
-            iou_batch = per_class_iou(hist_batch)
+            chunk_sample += batch_size
+            chunk_loss += loss.item() * batch_size
+            chunk_hist += hist_batch
 
-            if ENABLE_PRINT:
-                if (batch_idx % (num_batch//10+1)) == 0:
-                    print(f'Val Epoch: {epoch} [{batch_idx * len(inputs)}/{num_sample} ({100. * batch_idx*len(inputs) / num_sample:.0f}%)]')
+            if ((batch_idx+1) % chunk_batch) == 0:
+                seen_sample += chunk_sample
+                val_loss += chunk_loss
+                val_hist += chunk_hist
+
+                if ENABLE_PRINT:
+                    iou_batch = per_class_iou(hist_batch)
+                    print(f'Validation [{seen_sample}/{num_sample} ({100. * seen_sample / num_sample:.0f}%)]')
                     print(f'\tLoss: {loss.item():.6f}')
                     print(f"\tmIoU: {100.*iou_batch[iou_batch > 0].mean():.4f}")
 
+                if ENABLE_WANDB_LOG:
+                    iou_batch = per_class_iou(chunk_hist)
+                    wandb.log({
+                            "validate/step": val_step,
+                            "validate/batch_loss": chunk_loss/chunk_sample,
+                            "validate/batch_mIou": 100.*iou_batch[iou_batch > 0].mean()
+                        },
+                        commit=True,
+                    )
+
+                    val_step += 1
+
+                chunk_sample = 0
+                chunk_loss = 0.0
+                chunk_hist = np.zeros((n_classes, n_classes))
+
+        if chunk_sample > 0:
+            seen_sample += chunk_sample
+            val_loss += chunk_loss
+            val_hist += chunk_hist
+
+            if ENABLE_PRINT:
+                iou_batch = per_class_iou(hist_batch)
+                print(f'Validation [{seen_sample}/{num_sample} ({100. * seen_sample / num_sample:.0f}%)]')
+                print(f'\tLoss: {loss.item():.6f}')
+                print(f"\tmIoU: {100.*iou_batch[iou_batch > 0].mean():.4f}")
+
             if ENABLE_WANDB_LOG:
+                iou_batch = per_class_iou(chunk_hist)
                 wandb.log({
                         "validate/step": val_step,
-                        "validate/batch_loss": loss.item(),
+                        "validate/batch_loss": chunk_loss/chunk_sample,
                         "validate/batch_mIou": 100.*iou_batch[iou_batch > 0].mean()
                     },
                     commit=True,
                 )
 
-            val_step += 1
+                val_step += 1
 
-    val_loss = val_loss / num_batch
+    val_loss = val_loss / seen_sample
 
     val_iou_class = per_class_iou(val_hist)
     val_mIou = val_iou_class[val_iou_class > 0].mean()
