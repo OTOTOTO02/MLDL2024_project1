@@ -135,11 +135,11 @@ class BiSeNet(torch.nn.Module):
                     m.eps = 1e-5
                     m.momentum = 0.1
                     nn.init.constant_(m.weight, 1)
-                    nn.init.constant_(m.bias, 0)
-
-    def forward(self, input):
+                    nn.init.constant_(m.bias, 0)    
+    
+    def encode(self, input):
         # output of spatial path
-        sx = self.saptial_path(input)
+        sx = self.spatial_path(input)
 
         # output of context path
         cx1, cx2, tail = self.context_path(input)
@@ -149,22 +149,32 @@ class BiSeNet(torch.nn.Module):
         # upsampling
         cx1 = torch.nn.functional.interpolate(cx1, size=sx.size()[-2:], mode='bilinear')
         cx2 = torch.nn.functional.interpolate(cx2, size=sx.size()[-2:], mode='bilinear')
-        cx = torch.cat((cx1, cx2), dim=1)
-
-        if self.training == True:
-            cx1_sup = self.supervision1(cx1)
-            cx2_sup = self.supervision2(cx2)
-            cx1_sup = torch.nn.functional.interpolate(cx1_sup, size=input.size()[-2:], mode='bilinear')
-            cx2_sup = torch.nn.functional.interpolate(cx2_sup, size=input.size()[-2:], mode='bilinear')
+        cx = torch.cat((cx1, cx2), dim=1)     
 
         # output of feature fusion module
         result = self.feature_fusion_module(sx, cx)
-
+        
+        return result, cx1, cx2
+    
+    def decode(self, result):
         # upsampling
         result = torch.nn.functional.interpolate(result, scale_factor=8, mode='bilinear')
         result = self.conv(result)
 
-        if self.training == True:
-            return result, cx1_sup, cx2_sup
+        return result        
 
-        return result
+    def forward(self, input):
+        fused_features, cx1, cx2 = self.encode(input)
+        out = self.decode(fused_features)
+
+        if self.training:
+            cx1_sup = self.supervision1(cx1)
+            cx2_sup = self.supervision2(cx2)
+            cx1_sup = torch.nn.functional.interpolate(cx1_sup, size=input.shape[2:], mode='bilinear', align_corners=False)
+            cx2_sup = torch.nn.functional.interpolate(cx2_sup, size=input.shape[2:], mode='bilinear', align_corners=False)
+            return out, cx1_sup, cx2_sup
+        
+        if self.training == True:
+            return out, cx1_sup, cx2_sup
+
+        return out   

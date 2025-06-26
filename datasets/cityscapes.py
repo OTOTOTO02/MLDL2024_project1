@@ -1,14 +1,7 @@
-from torch.utils.data import Dataset
-import numpy as np
-
-import os
-import cv2
-from PIL import Image
-
 class CityScapes(Dataset):
     def __init__(self, rootdir, split="train", targetdir="gtFine", imgdir="images", transform=None, target_transform=None):
         super(CityScapes, self).__init__()
-        
+
         self.rootdir = rootdir
         self.split = split
         self.targetdir = os.path.join(self.rootdir, targetdir, self.split) # ./gtFine/train/
@@ -21,7 +14,7 @@ class CityScapes(Dataset):
         self.targets_labelIds_path = []
 
         for city in os.listdir(self.imgdir): # frankfurt
-            img_city_dir = os.path.join(self.imgdir, city) # ./images/train/frankfurt/ 
+            img_city_dir = os.path.join(self.imgdir, city) # ./images/train/frankfurt/
             target_city_dir = os.path.join(self.targetdir, city) # ./gtFine/train/frankfurt/
 
             for img_path in os.listdir(img_city_dir): # frankfurt_000000_000294_leftImg8bit.png
@@ -36,10 +29,9 @@ class CityScapes(Dataset):
 
     def __getitem__(self, idx):
         image = Image.open(self.imgs_path[idx]).convert('RGB')
-
         target_color = Image.open(self.targets_color_path[idx]).convert('RGB')
-        target_labelIds = cv2.imread(self.targets_labelIds_path[idx], cv2.IMREAD_UNCHANGED).astype(np.long)
-
+        target_labelIds = cv2.imread(self.targets_labelIds_path[idx], cv2.IMREAD_UNCHANGED).astype(np.int64)
+        
         if self.transform is not None:
             image = self.transform(image)
             target_color = self.transform(target_color)
