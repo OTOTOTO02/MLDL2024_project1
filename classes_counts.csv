@@ -1,0 +1,20 @@
+id;name;count
+0;road;                 2000279424
+1;sidewalk;             157799632    
+2;building;             586026240    
+3;wall;                 79183408
+4;fence;                31111896    
+5;pole;                 52304620
+6;light;                5818070    
+7;sign;                 5331167
+8;vegetation;           313206784        
+9;terrain;              140294832    
+10;sky;                 734290112
+11;person;              5793555    
+12;rider;               1213679    
+13;car;                 100922184
+14;truck;               54996872    
+16;train;               15980102    
+15;bus;                 12020944
+17;motocycle;           1665942        
+18;bicycle;             260148    

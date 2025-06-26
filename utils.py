@@ -5,7 +5,6 @@ import torch
 from dataclasses import dataclass
 from typing import Tuple
 
-import wandb
 import zipfile
 
 import matplotlib.pyplot as plt
@@ -123,9 +122,6 @@ def log_confusion_matrix(title:str, hist:np.ndarray, tag:str, step_name:str, ste
     plt.ylabel("True")
     plt.title(title)
 
-    wandb.log({tag: wandb.Image(plt), step_name:step_value})
-    plt.close()
-
 def log_bar_chart_ioU(title:str, class_names:list, mIou:float, iou_class:np.ndarray, tag:str, step_name:str, epoch:int):
     iou_percent = [round(iou*100., 2) for iou in iou_class]
     miou_percent = round(mIou*100., 2)
@@ -147,9 +143,6 @@ def log_bar_chart_ioU(title:str, class_names:list, mIou:float, iou_class:np.ndar
     plt.title(title)
     plt.tight_layout()
 
-    wandb.log({tag: wandb.Image(plt), step_name:epoch})
-
-    plt.close()
 
 def num_flops(device, model:torch.nn.Module, H:int, W:int):
     model.eval()
